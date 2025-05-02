@@ -1,0 +1,209 @@
+1. Overview
+Build a voice-first feature that lets users request a spoken summary on any topic within a time budget. A single UI button invokes the flow: capture “time available” + “topic of interest,” fetch raw data via Apify/Twitter, refine with Perplexity under the user’s constraints, and speak back the answer through VAPI.
+
+2. User Stories
+Quick Brief
+
+
+As a busy professional
+
+
+I want to press a button, say “30 minutes, stock market,”
+
+
+So that I can instantly hear a concise market overview without reading.
+
+
+Influencer Snapshot
+
+
+As a social-media strategist
+
+
+I want to ask “5 minutes, top Twitter people with over 1M followers,”
+
+
+So that I can get a rapid rundown of what key accounts have been sharing.
+
+
+
+3. Functional Requirements
+ID
+Requirement
+FR1
+UI Button: Single “Voice Brief” button visible on toolbar.
+FR2
+Voice Prompt: On tap, trigger VAPI’s startRecording(); capture two slots:
+
+
+• time_budget (e.g. “5 minutes”, “30 min”)
+
+
+• domain_query (e.g. “stock market”)
+FR3
+Apify Integration: Use Apify Twitter API actor to fetch raw data filtered by domain_query:
+- Query parameters: top tweets/users, follower thresholds, date ranges as needed.
+FR4
+Aggregator: Collect and de-duplicate Apify results into a single payload.
+FR5
+Perplexity API: POST to /summarize with:
+- text: aggregated tweet text
+- domain: domain_query
+- time_limit: time_budget (in minutes)
+FR6
+Response Handling:
+- Validate summary length ≤ time_budget spoken words (~150 wpm × minutes).
+- Fallback to shorter bullet list if summary is too long.
+FR7
+VAPI TTS: Send the final summary text to VAPI’s speak() endpoint to play audio back.
+FR8
+Error States: Graceful user feedback via voice and UI toast on:
+- Network/API failures
+- No data found for query
+- Exceeded time or token limits
+
+
+4. Data & API Integration
+VAPI (Voice Capture & TTS)
+
+
+POST /vapi/record → returns audio blob + parsed slots
+
+
+POST /vapi/speak (body: { text: string }) → streams TTS audio
+
+
+Apify Twitter Actor
+
+
+Input: {"query": "<domain_query>", "minFollowers": <threshold>}
+
+
+Output: [{id, username, text, followers, timestamp}, …]
+
+
+Perplexity Summarization
+
+
+Endpoint: POST /perplexity/summarize
+
+
+Payload:
+
+ json
+CopyEdit
+{
+  "text": "<aggregated text>",
+  "domain": "<domain_query>",
+  "time_limit_minutes": <number>
+}
+
+
+Response: { summary: string, estimated_speech_time_sec: number }
+
+
+
+5. Flow of Operations
+User Action
+
+
+User taps Voice Brief button.
+
+
+Voice Input
+
+
+VAPI starts recording.
+
+
+User speaks: “30 minutes, top Twitter people with over 1M followers.”
+
+
+VAPI returns { time_budget: 30, domain_query: "top Twitter people with over 1M followers" }.
+
+
+Data Fetch
+
+
+App invokes Apify Twitter actor with domain_query, minFollowers=1000000.
+
+
+Apify returns raw tweet/user data.
+
+
+Aggregate & Normalize
+
+
+Normalize text, remove duplicates, concatenate into a single document.
+
+
+Constrained Summarization
+
+
+POST aggregated text + constraints to Perplexity.
+
+
+Receive a summary that’s guaranteed to fit within ~4,500 words (30 min × 150 wpm).
+
+
+Voice Output
+
+
+Send summary to VAPI’s TTS endpoint.
+
+
+Play audio back to the user.
+
+
+Fallback & Errors
+
+
+If no data: VAPI says, “Sorry, I couldn’t find anything on your topic.”
+
+
+If summarization fails or time estimate > budget: “Here’s a bullet-point highlights instead.”
+
+
+
+6. Non-Functional Requirements
+Latency: End-to-end response < 8 seconds for typical queries.
+
+
+Scalability: Support 1,000 concurrent users.
+
+
+Resilience: Retries (×2) on 5xx from any API; fallback to partial results if still failing.
+
+
+Security: All API calls over HTTPS; use API keys stored securely.
+
+
+Localization: UI and voice prompts in English initially; design for easy extension.
+
+
+
+7. Metrics & Monitoring
+Usage: # of voice briefs per day.
+
+
+Success Rate: % queries returning a valid summary.
+
+
+Latency: Average time from button tap → audio playback.
+
+
+Error Rate: Failures by stage (VAPI, Apify, Perplexity).
+
+
+
+8. Dependencies
+VAPI API credentials & SDK
+
+
+Apify Twitter actor access & rate limits
+
+
+Perplexity API access & token limits
+
+
+Front-end framework compatible with Trae AI HTTP client
